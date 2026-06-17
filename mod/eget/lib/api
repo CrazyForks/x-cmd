@@ -86,7 +86,7 @@ ___x_cmd_eget_api_curl(){
 
     # Cache API responses for 10 minutes
     if [ "$___X_CMD_EGET_UPDATE" != "1" ] && [ "$___X_CMD_EGET_NO_CCMD" != "1" ]; then
-        eval "x ccmd 10m -- curl -sS -L -f $ssl_opts $auth_opts \"$url\"" 2>/dev/null && return
+        eval "x ccmd 10m -- curl -sS -L -f $ssl_opts $auth_opts \"$url\"" 2>/dev/null && return $?
     fi
 
     eval "___x_cmd_cmds curl -sS -L -f $ssl_opts $auth_opts \"$url\""
@@ -102,14 +102,14 @@ ___x_cmd_eget_api___ghproxy_(){
     local endpoint="${___X_CMD_GHPROXY_ENDPOINT:-}"
     x_="$url"
 
-    [ -z "$endpoint" ] && return
+    [ -z "$endpoint" ] && return 1
     case "$url" in
         https://github.com/*|http://github.com/*) ;;
-        *) return ;;
+        *) return 1 ;;
     esac
 
     local ep="${endpoint%/}"
-    [ -z "$ep" ] && return
+    [ -z "$ep" ] && return 1
 
     case "$ep" in
         */github.com)
@@ -177,31 +177,30 @@ ___x_cmd_eget_api_list_releases(){
 }
 
 ___x_cmd_eget_api_rate(){
+    case "${1:-}" in -h|--help) ___x_cmd help -m eget rate; return 0 ;; esac
     local forge="${1:-github}"
-    # Normalize short names
     case "$forge" in
         gh)  forge="github" ;;
-        gl)  forge="gitlab" ;;
-        cb)  forge="codeberg" ;;
-    esac
-    local base_url
-    case "$forge" in
-        codeberg)   base_url="https://codeberg.org/api/v1" ;;
-        gitlab)     base_url="https://gitlab.com/api/v4" ;;
-        github|*)   base_url="https://api.github.com" ;;
     esac
 
-    local token=""
-    case "$forge" in
-        github)     token="${EGET_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}" ;;
-        gitlab)     token="${EGET_GITLAB_TOKEN:-${EGET_FORGE_TOKEN:-}}" ;;
-        codeberg)   token="${EGET_CODEBERG_TOKEN:-${EGET_FORGE_TOKEN:-}}" ;;
-    esac
+    # Only GitHub exposes a public /rate_limit endpoint that returns
+    # the per-token counters in the body. GitLab and Codeberg (Gitea)
+    # report rate-limit info only via HTTP headers on each request —
+    # there is no standalone query endpoint, so we don't support them.
+    if [ "$forge" != "github" ]; then
+        N=eget M="rate: only GitHub is supported (GitLab / Codeberg expose rate limits only via HTTP headers, no query endpoint)" log:ret:64
+        return
+    fi
 
+    local token="${EGET_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
     local auth_opts=""
     [ -n "$token" ] && auth_opts="-H \"Authorization: Bearer $token\""
 
-    eval "___x_cmd_cmds curl -sS -L -f $auth_opts \"$base_url/rate_limit\"" 2>/dev/null | \
-        ___x_cmd_cmds jq -r '.resources.core | "Rate limit: \(.remaining)/\(.limit) (resets at \(.reset | todate))"' 2>/dev/null || \
+    local resp
+    resp="$( eval "___x_cmd_cmds curl -sS -L -f $auth_opts \"https://api.github.com/rate_limit\"" )" || {
+        N=eget M="rate: failed to fetch from api.github.com" log:ret:1
+        return
+    }
+    printf "%s" "$resp" | ___x_cmd_cmds jq -r '.resources.core | "Rate limit: \(.remaining)/\(.limit) (resets at \(.reset | todate))"' 2>/dev/null || \
         printf "Unable to fetch rate limit info\n"
 }
