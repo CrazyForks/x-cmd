@@ -7,6 +7,7 @@ ___x_cmd_claude_doubao(){
     local op="$1"
     case "$op" in
         -h|--help)      ___x_cmd help -m claude doubao; return 0 ;;
+        --minimal-init) ___x_cmd_claude_doubao_minimal_init "$@" ; return $? ;;
         --cfg)          shift;
                         ___x_cmd_claude_doubao_cfg "$@"; return $? ;;
         --)             shift ;;
@@ -80,6 +81,21 @@ ___x_cmd_claude_doubao_cur(){
     ___x_cmd_claude_doubao_cfg --current "$@"
 }
 
+___x_cmd_claude_doubao_minimal_init(){
+    local cur_apikey=""
+    if [ -f "$(___x_cmd_claude_doubao_cur --get config)" ]; then
+        ___x_cmd_claude_doubao_cur cur_apikey:=apikey
+    fi
+
+    claude:info "To get Doubao coding plan API key -> https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey"
+
+    ___x_cmd_claude_doubao_cfg___invoke --init ${cur_apikey:+"--ctrl_exit_strategy"} \
+        apikey      "Set up the Doubao coding plan API key"                               \
+                    "$cur_apikey"   '=~*' "^[A-Za-z0-9-]+$"
+
+    ___x_cmd_claude_doubao_has_apikey 2>/dev/null >&2
+}
+
 ___x_cmd_claude_doubao_init(){
     local cur_apikey=; local cur_model=; local cur_endpoint
 
@@ -98,6 +114,15 @@ ___x_cmd_claude_doubao_init(){
                     "${cur_endpoint:-"$___X_CMD_CLAUDE_DOUBAO_DEFAULT_ENDPOINT"}" || return $?
 }
 
+___x_cmd_claude_doubao_has_apikey(){
+    local apikey=
+    ___x_cmd_claude_doubao_cur apikey:= 2>/dev/null
+    [ -n "$apikey" ] || {
+        claude:error "Please setting up your apikey first ==> 'x claude doubao --cfg apikey=<your apikey>'"
+        claude:warn "You can get the Doubao coding plan API Key from ==>  https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey"
+        return 1
+    }
+}
 
 ___X_CMD_CLAUDE_DOUBAO_CFG_VARLIST="apikey,model,endpoint"
 ___x_cmd_claude_doubao_cfg___invoke(){
